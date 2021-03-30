@@ -805,39 +805,41 @@ class DFtoVW:
             for (key, value) in missing_cols.items()
             if len(value) > 0
         }
-        self.generate_missing_col_error(missing_cols)
+        if missing_cols:
+            self.raise_missing_col_error(missing_cols)
 
-    def generate_missing_col_error(self, absent_cols_dict):
-        """Generate error if some columns are missing
+    def raise_missing_col_error(self, absent_cols_dict):
+        """Raises error if some columns are missing.
 
         Raises
         ------
         ValueError
             If one or more columns are not in the dataframe.
         """
-        if absent_cols_dict:
-            msg_error = ""
-            for attribute_name, missing_cols in absent_cols_dict.items():
-                missing_cols = (
-                    repr(missing_cols)[1:-1]
-                    if isinstance(missing_cols, list)
-                    else missing_cols
-                )
-                if len(msg_error) > 0:
-                    msg_error += " "
-                msg_error += "In '{attribute}': column(s) {colnames} not found in dataframe.".format(
-                    attribute=attribute_name, colnames=missing_cols,
-                )
-            raise ValueError(msg_error)
+        error_msg = ""
+        for attribute_name, missing_cols in absent_cols_dict.items():
+            missing_cols = (
+                repr(missing_cols)[1:-1]
+                if isinstance(missing_cols, list)
+                else missing_cols
+            )
+            if len(error_msg) > 0:
+                error_msg += " "
+            error_msg += "In '{attribute}': column(s) {colnames} not found in dataframe.".format(
+                attribute=attribute_name, colnames=missing_cols,
+            )
+        raise ValueError(error_msg)
 
     def check_columns_type_and_values(self):
-        """Check columns type and values range"""
+        """Check columns type and values range."""
         for instance in [self.tag, self.label]:
-            self.check_instance_columns(instance)
+            if instance is not None:
+                self.check_instance_columns(instance)
 
         for namespace in self.namespaces:
             for feature in namespace.features:
-                self.check_instance_columns(feature)
+                if instance is not None:
+                    self.check_instance_columns(feature)
 
     def check_instance_columns(self, instance):
         """Check the columns type and values of a given instance.
@@ -854,45 +856,37 @@ class DFtoVW:
         ValueError
             If a column values are not in the valid range.
         """
-        if instance is None:
-            pass
-        else:
-            class_name = type(instance).__name__
-            for attribute_name in vars(instance):
-                attribute_value = getattr(instance, attribute_name)
+        class_name = type(instance).__name__
 
-                if isinstance(attribute_value, list):
-                    list_of_col = all([isinstance(x, _Col) for x in attribute_value])
-                else:
-                    list_of_col = False
+        for attribute_name, attribute_value in vars(instance).items():
+            
+            if not isinstance(attribute_value, list):
+                attribute_value = [attribute_value]
+            
+            if not all([isinstance(x, _Col) for x in attribute_value]):
+                continue
 
-                if isinstance(attribute_value, _Col) or list_of_col:
-                    # Testing column type
-                    try:
-                        if list_of_col:
-                            [x.check_col_type(self.df) for x in attribute_value]
-                        else:
-                            attribute_value.check_col_type(self.df)
-                    except TypeError as type_error:
-                        type_error_msg = "In argument '{attribute}' of '{class_name}', {error}".format(
-                            class_name=class_name,
-                            attribute=attribute_name,
-                            error=str(type_error),
-                        )
-                        raise TypeError(type_error_msg)
-                    # Testing column value range
-                    try:
-                        if list_of_col:
-                            [x.check_col_value(self.df) for x in attribute_value]
-                        else:
-                            attribute_value.check_col_value(self.df)
-                    except ValueError as value_error:
-                        value_error_msg = "In argument '{attribute}' of '{class_name}', {error}".format(
-                            class_name=class_name,
-                            attribute=attribute_name,
-                            error=str(value_error),
-                        )
-                        raise ValueError(value_error_msg)
+            # Testing columns type
+            try:
+                [x.check_col_type(self.df) for x in attribute_value]
+            except TypeError as type_error:
+                type_error_msg = "In argument '{attribute}' of '{class_name}', {error}".format(
+                    class_name=class_name,
+                    attribute=attribute_name,
+                    error=str(type_error),
+                )
+                raise TypeError(type_error_msg)
+            
+            # Testing columns value range
+            try:
+                [x.check_col_value(self.df) for x in attribute_value]
+            except ValueError as value_error:
+                value_error_msg = "In argument '{attribute}' of '{class_name}', {error}".format(
+                    class_name=class_name,
+                    attribute=attribute_name,
+                    error=str(value_error),
+                )
+                raise ValueError(value_error_msg)
 
     def convert_df(self):
         """Main method that converts the dataframe to the VW format.
